@@ -140,7 +140,8 @@ static int set_nosigpipe(int socket_fd)
 
 #ifdef UDPRELAY_REDIR
 
-static int get_dstaddr(struct msghdr *msg, struct sockaddr_storage *dstaddr) {
+static int get_dstaddr(struct msghdr *msg, struct sockaddr_storage *dstaddr)
+{
     struct cmsghdr *cmsg;
 
     for (cmsg = CMSG_FIRSTHDR(msg); cmsg; cmsg = CMSG_NXTHDR(msg, cmsg)) {
@@ -703,7 +704,7 @@ static void server_recv_cb(EV_P_ ev_io *w, int revents)
     msg.msg_iovlen = 1;
 
     ssize_t buf_len = recvmsg(server_ctx->fd, &msg, 0);
-    if (buf_len <= 0) {
+    if (buf_len == -1) {
         ERROR("[udp] server_recvmsg");
         goto CLEAN_UP;
     }
