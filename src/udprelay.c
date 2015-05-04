@@ -140,6 +140,14 @@ static int set_nosigpipe(int socket_fd)
 
 #ifdef UDPRELAY_REDIR
 
+#ifndef IP_TRANSPARENT
+#define IP_TRANSPARENT       19
+#endif
+
+#ifndef IP_RECVORIGDSTADDR
+#define IP_RECVORIGDSTADDR   20
+#endif
+
 static int get_dstaddr(struct msghdr *msg, struct sockaddr_storage *dstaddr)
 {
     struct cmsghdr *cmsg;
