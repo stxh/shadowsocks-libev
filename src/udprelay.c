@@ -687,6 +687,33 @@ static void server_recv_cb(EV_P_ ev_io *w, int revents)
     socklen_t src_addr_len = sizeof(struct sockaddr_storage);
     unsigned int offset = 0;
 
+#ifdef UDPRELAY_REDIR
+    char control_buffer[64] = { 0 };
+    struct iovec iov[1];
+    struct sockaddr_storage dst_addr;
+    memset(&dst_addr, 0, sizeof(struct sockaddr_storage));
+
+    msg.msg_name = &src_addr;
+    msg.msg_namelen = src_addr_len;
+    msg.msg_control = control_buffer;
+    msg.msg_controllen = sizeof(control_buffer);
+
+    iov[0].iov_base = buf;
+    iov[0].iov_len = BUF_SIZE;
+    msg.msg_iov = iov;
+    msg.msg_iovlen = 1;
+
+    int msglen = recvmsg(server_ctx->fd, &msg, 0);
+    if (msglen <= 0) {
+        ERROR("[udp] server_recvmsg");
+        goto CLEAN_UP;
+    }
+
+    if (get_dstaddr(&msg, &dst_addr)) {
+        LOGE("[udp] unable to get dest addr");
+        goto CLEAN_UP;
+    }
+#else
     ssize_t buf_len =
         recvfrom(server_ctx->fd, buf, BUF_SIZE, 0, (struct sockaddr *)&src_addr,
                  &src_addr_len);
@@ -699,6 +726,7 @@ static void server_recv_cb(EV_P_ ev_io *w, int revents)
         }
         goto CLEAN_UP;
     }
+#endif
 
     if (verbose) {
         LOGI("[udp] server receive a packet");
@@ -760,7 +788,38 @@ static void server_recv_cb(EV_P_ ev_io *w, int revents)
      *
      */
 
-#ifdef UDPRELAY_TUNNEL
+#ifdef UDPRELAY_REDIR
+    char addr_header[256] = { 0 };
+    int addr_header_len = 0;
+
+    if (dst_addr.ss_family == AF_INET) {
+        struct sockaddr_in *addr = (struct sockaddr_in *)&dst_addr;
+        size_t addr_len = sizeof(struct in_addr);
+        addr_header[addr_header_len++] = 1;
+        memcpy(addr_header + addr_header_len, &addr->sin_addr, addr_len);
+        addr_header_len += addr_len;
+        memcpy(addr_header + addr_header_len, &addr->sin_port, 2);
+        addr_header_len += 2;
+    } else if (dst_addr.ss_family = AF_INET6) {
+        struct sockaddr_in *addr = (struct sockaddr_in6 *)&dst_addr;
+        size_t addr_len = sizeof(struct in6_addr);
+        addr_header[addr_header_len++] = 4;
+        memcpy(addr_header + addr_header_len, &addr->sin6_addr, addr_len);
+        addr_header_len += addr_len;
+        memcpy(addr_header + addr_header_len, &addr->sin6_port, 2);
+        addr_header_len += 2;
+    } else {
+        LOGE("[udp] failed to parse tproxy addr");
+        goto CLEAN_UP;
+    }
+
+    // reconstruct the buffer
+    buf = realloc(buf, buf_len + addr_header_len);
+    memmove(buf + addr_header_len, buf, buf_len);
+    memcpy(buf, addr_header, addr_header_len);
+    buf_len += addr_header_len;
+
+#elif UDPRELAY_TUNNEL
     char addr_header[256] = { 0 };
     char *host = server_ctx->tunnel_addr.host;
     char *port = server_ctx->tunnel_addr.port;
